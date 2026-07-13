@@ -8,7 +8,7 @@ from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 
-# 1. Flask Web Server (Render အတွက် Port ဖွင့်ပေးရန်)
+# 1. Flask Web Server
 app = Flask(__name__)
 
 @app.route('/')
@@ -25,13 +25,20 @@ cursor = conn.cursor()
 cursor.execute('CREATE TABLE IF NOT EXISTS movies (name TEXT, msg_id INTEGER)')
 conn.commit()
 
+# [အရေးကြီး] ၅ မိနစ်နေမှ Message ဖျက်ပေးမည့် Background Task
+async def delete_message_after_delay(context, chat_id, message_id):
+    await asyncio.sleep(300) # ၅ မိနစ်စောင့်
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception as e:
+        print(f"Error deleting message: {e}")
+
 # 3. Bot Logic
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Channel ထဲက Post များကို Database ထဲ သိမ်းခြင်း
     if update.channel_post and update.channel_post.chat.id == int(os.environ.get('DB_CHANNEL_ID', 0)):
         text = update.channel_post.caption or update.channel_post.text
         if text:
-            # Channel မှ နာမည်ကို သန့်စင်ပြီး သိမ်းဆည်းရန်
             movie_name = text.split('\n')[0].strip().lower()
             cursor.execute('INSERT OR REPLACE INTO movies (name, msg_id) VALUES (?, ?)', 
                            (movie_name, update.channel_post.message_id))
@@ -43,8 +50,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.message.text.strip().lower()
         if not query: return
         
-        # [အရေးကြီး] User ပို့လိုက်တဲ့စာထဲက Effect များနှင့် သင်္ကေတများအားလုံးကို ဖြုတ်ပေးခြင်း
-        # ဥပမာ - *Bold*, (2022), [2022] စသည်တို့ကို ဖယ်ရှားပြီး space ဖြင့် အစားထိုးခြင်း
+        # Effect များ၊ Bracket များ ဖယ်ရှားပြီး နာမည်သန့်စင်ခြင်း
         clean_query = re.sub(r'[*_`~()\[\]]', ' ', query)
         search_query = '%' + '%'.join(clean_query.split()) + '%'
         
@@ -63,12 +69,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 pass
             
-            # Post ကို ၅ မိနစ်နေရင် ဖျက်ရန်
-            await asyncio.sleep(300)
-            try:
-                await context.bot.delete_message(chat_id=update.message.chat.id, message_id=forwarded_msg.message_id)
-            except:
-                pass
+            # [အရေးကြီး] ၅ မိနစ်စောင့်ပြီး ဖျက်တာကို Background မှာ အလုပ်လုပ်ခိုင်းခြင်း
+            asyncio.create_task(delete_message_after_delay(context, update.message.chat.id, forwarded_msg.message_id))
         else:
             await update.message.reply_text("ဒီ Movie ကို မတွေ့ရှိပါရှင်။")
 
@@ -80,13 +82,12 @@ def run_bot():
     bot_app = ApplicationBuilder().token(token).build()
     bot_app.add_handler(MessageHandler(filters.ALL, handle_message))
     print("Bot is running...")
-    # Polling ကို မြန်စေရန် poll_interval ကို 0.1 သို့ ထားရှိသည်
     bot_app.run_polling(drop_pending_updates=True, poll_interval=0.1)
 
 if __name__ == '__main__':
     # Flask ကို Background Thread နဲ့အရင် စတင်ပါ
     threading.Thread(target=run_flask, daemon=True).start()
-    time.sleep(3) # Flask အလုပ်လုပ်ဖို့ အချိန်ခဏပေးပါ
+    time.sleep(3) 
     # Bot ကို Main Thread မှာ စတင်ပါ
     run_bot()
             
