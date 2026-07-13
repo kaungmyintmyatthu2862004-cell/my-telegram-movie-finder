@@ -22,8 +22,8 @@ Thread(target=run_flask).start()
 
 # 2. Configuration (Environment Variables မှ ခေါ်ယူခြင်း)
 TOKEN = os.environ.get('TOKEN')
-GROUP_ID = int(os.environ.get('GROUP_ID'))
-DB_CHANNEL_ID = int(os.environ.get('DB_CHANNEL_ID'))
+GROUP_ID = int(os.environ.get('GROUP_ID') or 0)
+DB_CHANNEL_ID = int(os.environ.get('DB_CHANNEL_ID') or 0)
 
 # 3. Database
 conn = sqlite3.connect('movies.db', check_same_thread=False)
@@ -78,5 +78,8 @@ if __name__ == '__main__':
     if not TOKEN:
         print("Error: TOKEN environment variable is not set!")
     else:
-        bot_app =
-            
+        # ဒီနေရာမှာ build လုပ်တာကို သေချာရေးပေးထားပါတယ်
+        bot_app = ApplicationBuilder().token(TOKEN).build()
+        bot_app.add_handler(MessageHandler(filters.ALL, handle_message))
+        print("Bot and Web Server are running...")
+        bot_app.run_polling()
