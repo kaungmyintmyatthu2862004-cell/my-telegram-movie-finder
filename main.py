@@ -1,19 +1,22 @@
+import os
 import sqlite3
 import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 
-TOKEN = "8942001881:AAER0JVXXlkSiH8B1Ff3N0vRVoW5du8D7sY"
-GROUP_ID = -1003906056351
-DB_CHANNEL_ID = -1004438806546
+# Render Environment Variables များမှ ခေါ်ယူခြင်း
+TOKEN = os.environ.get('TOKEN')
+GROUP_ID = int(os.environ.get('GROUP_ID'))
+DB_CHANNEL_ID = int(os.environ.get('DB_CHANNEL_ID'))
 
+# Database ချိတ်ဆက်ခြင်း
 conn = sqlite3.connect('movies.db', check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute('CREATE TABLE IF NOT EXISTS movies (name TEXT, msg_id INTEGER)')
 conn.commit()
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # 1. Database သိမ်းခြင်း
+    # 1. Database Channel ထဲက Post များကို Database ထဲ သိမ်းခြင်း
     if update.channel_post and update.channel_post.chat.id == DB_CHANNEL_ID:
         text = update.channel_post.caption or update.channel_post.text
         if text:
@@ -35,7 +38,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # ရှာဖွေနေကြောင်း စာပို့ခြင်း
             status_msg = await update.message.reply_text("ရုပ်ရှင်ရှာဖွေနေပါတယ်🔎 ခနစောင့်ပေးပါ🎬🍿 ...")
             
-            # စာကို ၅ စက္ကန့်နေရင် ဖျက်ရန် (အရင်ကအတိုင်း)
+            # စာကို ၅ စက္ကန့်နေရင် ဖျက်ရန်
             await asyncio.sleep(5)
             try:
                 await context.bot.delete_message(chat_id=GROUP_ID, message_id=status_msg.message_id)
@@ -59,7 +62,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("ဒီ Movie ကို မတွေ့ရှိပါရှင်။")
 
 if __name__ == '__main__':
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(MessageHandler(filters.ALL, handle_message))
-    print("Bot is running...")
-    app.run_polling()
+    if not TOKEN:
+        print("Error: TOKEN environment variable is not set!")
+    else:
+        app = ApplicationBuilder().token(TOKEN).build()
+        app.add_handler(MessageHandler(filters.ALL, handle_message))
+        print("Bot is running...")
+        app.run_polling()
+        
