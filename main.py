@@ -3,6 +3,7 @@ import sqlite3
 import asyncio
 import threading
 import time
+import re
 from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
@@ -30,6 +31,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.channel_post and update.channel_post.chat.id == int(os.environ.get('DB_CHANNEL_ID', 0)):
         text = update.channel_post.caption or update.channel_post.text
         if text:
+            # Channel မှ နာမည်ကို သန့်စင်ပြီး သိမ်းဆည်းရန်
             movie_name = text.split('\n')[0].strip().lower()
             cursor.execute('INSERT OR REPLACE INTO movies (name, msg_id) VALUES (?, ?)', 
                            (movie_name, update.channel_post.message_id))
@@ -41,7 +43,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.message.text.strip().lower()
         if not query: return
         
-        search_query = '%' + '%'.join(query.split()) + '%'
+        # [အရေးကြီး] User ပို့လိုက်တဲ့စာထဲက Effect များနှင့် သင်္ကေတများအားလုံးကို ဖြုတ်ပေးခြင်း
+        # ဥပမာ - *Bold*, (2022), [2022] စသည်တို့ကို ဖယ်ရှားပြီး space ဖြင့် အစားထိုးခြင်း
+        clean_query = re.sub(r'[*_`~()\[\]]', ' ', query)
+        search_query = '%' + '%'.join(clean_query.split()) + '%'
+        
         cursor.execute('SELECT msg_id FROM movies WHERE name LIKE ?', (search_query,))
         result = cursor.fetchone()
         
@@ -74,7 +80,7 @@ def run_bot():
     bot_app = ApplicationBuilder().token(token).build()
     bot_app.add_handler(MessageHandler(filters.ALL, handle_message))
     print("Bot is running...")
-    # Polling ကို မြန်စေရန် poll_interval ကို 0.1 သို့ ချထားသည်
+    # Polling ကို မြန်စေရန် poll_interval ကို 0.1 သို့ ထားရှိသည်
     bot_app.run_polling(drop_pending_updates=True, poll_interval=0.1)
 
 if __name__ == '__main__':
@@ -83,4 +89,4 @@ if __name__ == '__main__':
     time.sleep(3) # Flask အလုပ်လုပ်ဖို့ အချိန်ခဏပေးပါ
     # Bot ကို Main Thread မှာ စတင်ပါ
     run_bot()
-    
+            
