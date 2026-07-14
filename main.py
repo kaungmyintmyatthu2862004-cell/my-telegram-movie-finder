@@ -105,7 +105,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 logger.error(f"Forward Error: {e}")
         else:
-            await update.message.reply_text("ဒီရုပ်ရှင်ကို ရှာမတွေ့ပါ။")
+            # ပြောင်းလဲထားသော စာသား
+            await update.message.reply_text("တောင်းဆိုထားတဲ့ရုပ်ရှင်ကို admin တွေက upload နေပါတယ်နော်🍿🎬")
 
 def run_bot():
     TOKEN = os.environ.get('TOKEN')
