@@ -9,37 +9,34 @@ from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 
-# Logging စနစ်ထည့်သွင်းခြင်း (Error စစ်ရန်)
+# Logging စနစ်
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 1. Flask Web Server
+# Flask Server
 app = Flask(__name__)
-
 @app.route('/')
-def home():
-    return "Bot is running!"
+def home(): return "Bot is running!"
 
 def run_flask():
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
 
-# 2. Database
+# Database
 conn = sqlite3.connect('movies.db', check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute('CREATE TABLE IF NOT EXISTS movies (name TEXT, msg_id INTEGER)')
 conn.commit()
 
-# မက်ဆေ့ခ်ျဖျက်ပေးမည့် Background Task
-async def delete_message_after_delay(context, chat_id, message_id):
-    await asyncio.sleep(300) # 5 မိနစ်စောင့်
+# Message များကို အချိန်တစ်ခုစောင့်ပြီး ဖျက်ပေးမည့် Function
+async def delete_after_delay(context, chat_id, message_id, delay):
+    await asyncio.sleep(delay)
     try:
         await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-        logger.info(f"✅ မက်ဆေ့ခ်ျ {message_id} အောင်မြင်စွာ ဖျက်လိုက်ပါပြီ။")
     except Exception as e:
-        logger.error(f"❌ မက်ဆေ့ခ်ျ {message_id} ဖျက်မရပါ (Error: {e})")
+        logger.error(f"Error deleting message {message_id}: {e}")
 
-# 3. Bot Logic
+# Bot Logic
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Channel မှ အချက်အလက်သိမ်းရန်
     if update.channel_post and update.channel_post.chat.id == int(os.environ.get('DB_CHANNEL_ID', 0)):
@@ -48,7 +45,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             first_line = text.split('\n')[0].strip()
             movie_name = re.sub(r'[^a-zA-Z0-9\s]', ' ', first_line).lower()
             movie_name = ' '.join(movie_name.split())
-            
             cursor.execute('INSERT OR REPLACE INTO movies (name, msg_id) VALUES (?, ?)', 
                            (movie_name, update.channel_post.message_id))
             conn.commit()
@@ -59,31 +55,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.message.text.strip().lower()
         if not query: return
         
+        # နာမည်သန့်စင်ခြင်း
         clean_query = re.sub(r'[^a-zA-Z0-9\s]', ' ', query)
         stop_words = ['ကြည့်ချင်တယ်', 'ပေးပါ', 'ရှာပေးပါ', 'လိုချင်တယ်', 'ကြည့်မယ်', 'ပို့ပေးပါ', 'ရုပ်ရှင်']
-        for word in stop_words:
-            clean_query = clean_query.replace(word, '')
+        for word in stop_words: clean_query = clean_query.replace(word, ' ')
         clean_query = ' '.join(clean_query.split())
         
         if not clean_query: return
         
-        search_query = f"%{clean_query}%"
-        cursor.execute('SELECT msg_id FROM movies WHERE name LIKE ?', (search_query,))
+        cursor.execute('SELECT msg_id FROM movies WHERE name LIKE ?', (f"%{clean_query}%",))
         result = cursor.fetchone()
         
         if result:
-            status_msg = await update.message.reply_text("ရုပ်ရှင်ရှာဖွေနေပါတယ်...")
+            # ၁။ "ရှာနေပါတယ်" စာပို့ခြင်း
+            status_msg = await update.message.reply_text("ရုပ်ရှင်ရှာဖွေနေပါတယ်🔎...")
+            
+            # ၂။ ၅ စက္ကန့် စောင့်ခြင်း
+            await asyncio.sleep(5)
+            
+            # ၃။ "ရှာနေပါတယ်" စာကို ဖျက်ခြင်း
+            try: await context.bot.delete_message(chat_id=update.message.chat.id, message_id=status_msg.message_id)
+            except: pass
+            
+            # ၄။ ရုပ်ရှင်ကို Forward လုပ်ခြင်း
             forwarded_msg = await context.bot.copy_message(
                 chat_id=update.message.chat.id,
                 from_chat_id=int(os.environ.get('DB_CHANNEL_ID', 0)),
                 message_id=result[0]
             )
             
-            # မက်ဆေ့ခ်ျဖျက်ခြင်း အပိုင်း
-            try: await context.bot.delete_message(chat_id=update.message.chat.id, message_id=status_msg.message_id)
-            except: pass
-            
-            asyncio.create_task(delete_message_after_delay(context, update.message.chat.id, forwarded_msg.message_id))
+            # ၅။ Forward လုပ်ထားသော ရုပ်ရှင်ကို ၅ မိနစ် (၃၀၀ စက္ကန့်) နေရင် ဖျက်ရန် Background Task
+            asyncio.create_task(delete_after_delay(context, update.message.chat.id, forwarded_msg.message_id, 300))
         else:
             await update.message.reply_text("ဒီ Movie ကို ရှာမတွေ့ပါရှင်။")
 
@@ -97,4 +99,4 @@ if __name__ == '__main__':
     threading.Thread(target=run_flask, daemon=True).start()
     time.sleep(3)
     run_bot()
-        
+    
