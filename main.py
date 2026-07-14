@@ -51,37 +51,34 @@ async def delete_after_delay(context, chat_id, message_id, delay):
         logger.error(f"Error deleting message: {e}")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Environment Variables စစ်ဆေးခြင်း
-    DB_CHANNEL_ID = os.environ.get('DB_CHANNEL_ID')
-    GROUP_ID = os.environ.get('GROUP_ID')
+    DB_CHANNEL_ID = int(os.environ.get('DB_CHANNEL_ID', 0))
+    GROUP_ID = int(os.environ.get('GROUP_ID', 0))
     
-    if not DB_CHANNEL_ID or not GROUP_ID:
-        logger.error("DB_CHANNEL_ID သို့မဟုတ် GROUP_ID မရှိပါ")
-        return
-
-    # Channel မှ အချက်အလက်သိမ်းခြင်း
-    if update.channel_post and update.channel_post.chat.id == int(DB_CHANNEL_ID):
+    # 1. Channel မှ အချက်အလက်သိမ်းခြင်း
+    if update.channel_post and update.channel_post.chat.id == DB_CHANNEL_ID:
         text = update.channel_post.caption or update.channel_post.text
         if text:
             first_line = text.split('\n')[0].strip()
-            movie_name = re.sub(r'[^a-zA-Z0-9\s]', ' ', first_line).lower()
-            movie_name = ' '.join(movie_name.split())
-            
-            conn = get_db()
-            cursor = conn.cursor()
-            cursor.execute('INSERT OR REPLACE INTO movies (name, msg_id) VALUES (?, ?)', (movie_name, update.channel_post.message_id))
-            conn.commit()
-            conn.close()
+            # ရုပ်ရှင်နာမည်နဲ့ ခုနှစ် (19xx သို့မဟုတ် 20xx) ပါမှ သိမ်းမည်
+            if re.search(r'\b(19|20)\d{2}\b', first_line):
+                movie_name = re.sub(r'[^a-zA-Z0-9\s]', ' ', first_line).lower()
+                movie_name = ' '.join(movie_name.split())
+                
+                conn = get_db()
+                cursor = conn.cursor()
+                cursor.execute('INSERT OR REPLACE INTO movies (name, msg_id) VALUES (?, ?)', 
+                               (movie_name, update.channel_post.message_id))
+                conn.commit()
+                conn.close()
+                logger.info(f"Database သို့ သိမ်းဆည်းပြီး: {movie_name}")
         return
 
-    # Group မှ ရှာဖွေခြင်း
-    if update.message and update.message.chat.id == int(GROUP_ID):
-        query = update.message.text.strip().lower()
+    # 2. Group မှ ရှာဖွေခြင်း
+    if update.message and update.message.chat.id == GROUP_ID:
+        query = update.message.text.strip()
         if not query: return
         
-        clean_query = re.sub(r'[^a-zA-Z0-9\s]', ' ', query)
-        stop_words = ['ကြည့်ချင်တယ်', 'ပေးပါ', 'ရှာပေးပါ', 'လိုချင်တယ်', 'ကြည့်မယ်', 'ပို့ပေးပါ', 'ရုပ်ရှင်']
-        for word in stop_words: clean_query = clean_query.replace(word, ' ')
+        clean_query = re.sub(r'[^a-zA-Z0-9\s]', ' ', query).lower()
         clean_query = ' '.join(clean_query.split())
         
         if not clean_query: return
@@ -94,27 +91,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if result:
             status_msg = await update.message.reply_text("ရုပ်ရှင်ရှာဖွေနေပါတယ်🔎...")
-            await asyncio.sleep(2) 
-            
+            await asyncio.sleep(2)
             try: await context.bot.delete_message(chat_id=update.message.chat.id, message_id=status_msg.message_id)
             except: pass
             
             try:
                 forwarded_msg = await context.bot.copy_message(
                     chat_id=update.message.chat.id,
-                    from_chat_id=int(DB_CHANNEL_ID),
+                    from_chat_id=DB_CHANNEL_ID,
                     message_id=result[0]
                 )
                 asyncio.create_task(delete_after_delay(context, update.message.chat.id, forwarded_msg.message_id, 300))
             except Exception as e:
                 logger.error(f"Forward Error: {e}")
         else:
-            await update.message.reply_text("ဒီ Movie ကို ရှာမတွေ့ပါရှင်။")
+            await update.message.reply_text("ဒီရုပ်ရှင်ကို ရှာမတွေ့ပါ။")
 
 def run_bot():
     TOKEN = os.environ.get('TOKEN')
     if not TOKEN:
-        logger.error("TOKEN မရှိပါ! Environment Variable တွင် စစ်ဆေးပါ။")
+        logger.error("TOKEN မရှိပါ!")
         return
     
     bot_app = ApplicationBuilder().token(TOKEN).build()
@@ -125,3 +121,4 @@ if __name__ == '__main__':
     threading.Thread(target=run_flask, daemon=True).start()
     time.sleep(3)
     run_bot()
+        
