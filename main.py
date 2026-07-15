@@ -96,16 +96,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except: pass
             
             try:
+                # ရုပ်ရှင်ဖိုင်ကို Forward လုပ်ခြင်း
                 forwarded_msg = await context.bot.copy_message(
                     chat_id=update.message.chat.id,
                     from_chat_id=DB_CHANNEL_ID,
                     message_id=result[0]
                 )
+                
+                # သတိပေးစာသား ပို့ခြင်း
+                warning_msg = await update.message.reply_text("🎬🍿movie finder bot ပို့ထားတဲ့ postက ၅မိနစ်နေရင်အလိုလိုပျက်ပါမယ်‼️‼️")
+                
+                # ၅ မိနစ် (၃၀၀ စက္ကန့်) နေရင် ဖိုင်နဲ့ စာသားကို ဖျက်ရန်
                 asyncio.create_task(delete_after_delay(context, update.message.chat.id, forwarded_msg.message_id, 300))
+                asyncio.create_task(delete_after_delay(context, update.message.chat.id, warning_msg.message_id, 300))
             except Exception as e:
                 logger.error(f"Forward Error: {e}")
         else:
-            # ပြောင်းလဲထားသော စာသား
             await update.message.reply_text("တောင်းဆိုထားတဲ့ရုပ်ရှင်ကို admin တွေက upload နေပါတယ်နော်🍿🎬")
 
 def run_bot():
