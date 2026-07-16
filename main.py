@@ -13,10 +13,10 @@ from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filte
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Render မှာ Data ပျောက်ခြင်းမှ ကာကွယ်ရန် Temporary Storage ကို သုံးပါ
+# Database Path
 DB_PATH = '/tmp/movies.db'
 
-# Flask Server (Render အတွက် လိုအပ်သည်)
+# Flask Server
 app = Flask(__name__)
 @app.route('/')
 def home(): return "Bot is running!"
@@ -33,7 +33,6 @@ def init_db():
         cursor.execute('CREATE TABLE IF NOT EXISTS movies (name TEXT PRIMARY KEY, msg_id INTEGER)')
         conn.commit()
         conn.close()
-        logger.info("Database initialized successfully at /tmp/movies.db")
     except Exception as e:
         logger.error(f"Database Init Error: {e}")
 
@@ -59,7 +58,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = update.channel_post.caption or update.channel_post.text
         if text:
             first_line = text.split('\n')[0].strip()
-            # ရုပ်ရှင်နာမည်နဲ့ ခုနှစ် (19xx သို့မဟုတ် 20xx) ပါမှ သိမ်းမည်
             if re.search(r'\b(19|20)\d{2}\b', first_line):
                 movie_name = re.sub(r'[^a-zA-Z0-9\s]', ' ', first_line).lower()
                 movie_name = ' '.join(movie_name.split())
@@ -70,18 +68,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                (movie_name, update.channel_post.message_id))
                 conn.commit()
                 conn.close()
-                logger.info(f"Database သို့ သိမ်းဆည်းပြီး: {movie_name}")
         return
 
     # 2. Group မှ ရှာဖွေခြင်း
     if update.message and update.message.chat.id == GROUP_ID:
         query = update.message.text.strip()
-        if not query: return
         
+        # ခုနှစ်ပါဝင်မှု စစ်ဆေးခြင်း (ရုပ်ရှင်နာမည် + ခုနှစ်)
+        has_year = re.search(r'\b(19|20)\d{2}\b', query)
+        
+        # စာသားတိုရင် (သို့) ခုနှစ်မပါရင် ဘာမှမလုပ်ဘဲ ထွက်သွားမည်
+        if not has_year or len(query) < 5:
+            return 
+
         clean_query = re.sub(r'[^a-zA-Z0-9\s]', ' ', query).lower()
         clean_query = ' '.join(clean_query.split())
-        
-        if not clean_query: return
         
         conn = get_db()
         cursor = conn.cursor()
@@ -96,17 +97,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except: pass
             
             try:
-                # ရုပ်ရှင်ဖိုင်ကို Forward လုပ်ခြင်း
                 forwarded_msg = await context.bot.copy_message(
                     chat_id=update.message.chat.id,
                     from_chat_id=DB_CHANNEL_ID,
                     message_id=result[0]
                 )
-                
-                # သတိပေးစာသား ပို့ခြင်း
                 warning_msg = await update.message.reply_text("🎬🍿movie finder bot ပို့ထားတဲ့ postက ၅မိနစ်နေရင်အလိုလိုပျက်ပါမယ်‼️‼️")
                 
-                # ၅ မိနစ် (၃၀၀ စက္ကန့်) နေရင် ဖိုင်နဲ့ စာသားကို ဖျက်ရန်
                 asyncio.create_task(delete_after_delay(context, update.message.chat.id, forwarded_msg.message_id, 300))
                 asyncio.create_task(delete_after_delay(context, update.message.chat.id, warning_msg.message_id, 300))
             except Exception as e:
@@ -116,9 +113,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def run_bot():
     TOKEN = os.environ.get('TOKEN')
-    if not TOKEN:
-        logger.error("TOKEN မရှိပါ!")
-        return
+    if not TOKEN: return
     
     bot_app = ApplicationBuilder().token(TOKEN).build()
     bot_app.add_handler(MessageHandler(filters.ALL, handle_message))
@@ -128,4 +123,3 @@ if __name__ == '__main__':
     threading.Thread(target=run_flask, daemon=True).start()
     time.sleep(3)
     run_bot()
-        
